@@ -1,0 +1,13 @@
+{
+  "name": "Unser FinanzPilot",
+  "short_name": "Unser Pilot",
+  "description": "Gemeinsamer Finanzplaner für zwei Personen mit Bon- und Kontoauszugimport",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f7f3",
+  "theme_color": "#13251b",
+  "lang": "de-DE",
+  "icons": [
+    {"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
