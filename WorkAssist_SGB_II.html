@@ -322,7 +322,7 @@ details.more.flat{border:0;margin:0;padding:0}
   /* ------------------------------------------------------------------ *
    * Rechtsquellen. Nur amtliche Fundstellen, keine erfundenen Normen.   *
    * ------------------------------------------------------------------ */
-  const LINKLIST_DATE = '19.11.2026';
+  const LINKLIST_DATE = '20.11.2026';
   const G = 'https://www.gesetze-im-internet.de/';
   const LAW = {
     sgb2_7:   { title: '§ 7 SGB II',   desc: 'Leistungsberechtigte, Bedarfsgemeinschaft', url: G + 'sgb_2/__7.html', kind: 'gesetz' },
@@ -1016,7 +1016,7 @@ details.more.flat{border:0;margin:0;padding:0}
     if (d.hasHousing || v.kind === 'erst') {
       const hq = [
         'Tatsächliche Aufwendungen belegen: Nettokaltmiete, kalte Nebenkosten und Heizkosten getrennt feststellen.',
-        'Ob und wie eine Karenzzeit für die Unterkunftskosten gilt, nach der für den Zeitraum geltenden Fassung des § 22 SGB II prüfen. Gesetzesänderungen beachten.',
+        'Karenzzeit für die Unterkunftskosten prüfen (§ 22 Abs. 1 SGB II): ein Jahr, seit 01.07.2026 höchstens das 1,5-Fache der angemessenen Kosten.',
         'Angemessenheit nach den örtlichen Vorgaben des zuständigen Trägers prüfen. Die App kennt keine Mietobergrenzen.',
         'Heizkosten gesondert auf Angemessenheit prüfen.',
       ];
@@ -1035,7 +1035,7 @@ details.more.flat{border:0;margin:0;padding:0}
     if (num(v.childCount) > 0) iq.push('Kindergeld und Unterhalt den richtigen Personen zuordnen (§ 11 Abs. 1 SGB II).');
     push({ id: 'einkommen', title: 'Einkommen und Familienleistungen', facts: incFacts.map((f) => (f.key === 'incomeType' ? { ...f, known: v.incomeType !== 'unknown' } : ['childBenefit', 'maintenance'].includes(f.key) ? { ...f, known: v[f.key] !== 'unknown' } : f)), questions: iq, norms: ['sgb2_11', 'sgb2_11a', 'sgb2_11b'] });
 
-    if (v.kind === 'erst') push({ id: 'vermoegen', title: 'Vermögen', facts: [], questions: ['Vermögensangaben aus dem Antrag prüfen. Freibeträge und eine etwaige Karenzzeit nach der geltenden Fassung des § 12 SGB II bestimmen.', 'Nur fehlende Angaben nachfordern; keine pauschale Anforderung aller Kontoauszüge.'], norms: ['sgb2_12', 'sgb2_9'], severity: 'hinweis' });
+    if (v.kind === 'erst') push({ id: 'vermoegen', title: 'Vermögen', facts: [], questions: ['Vermögensangaben aus dem Antrag prüfen. Seit 01.07.2026 Freibetrag je Person nach Lebensalter ohne Karenzzeit (§ 12 SGB II n. F.); für vor dem 01.07.2026 begonnene Bewilligungszeiträume altes Recht (§ 65a SGB II).', 'Nur fehlende Angaben nachfordern; keine pauschale Anforderung aller Kontoauszüge.'], norms: ['sgb2_12', 'sgb2_9'], severity: 'hinweis' });
     if (num(v.childCount) > 0) push({ id: 'but', title: 'Bildung und Teilhabe', facts: [fact('childAges')], questions: ['Besuchen Kinder Kita oder Schule? Bedarfe nach § 28 SGB II ansprechen.'], norms: ['sgb2_28'], severity: 'hinweis' });
 
     if (v.kind === 'wba') {
@@ -1215,27 +1215,56 @@ details.more.flat{border:0;margin:0;padding:0}
     mbPregnant: 0.17,
     // § 11b Abs. 2 und 3 SGB II: Grundfreibetrag und Erwerbstätigenfreibetrag
     fb: { grund: 100, tiers: [[100, 520, 0.20], [520, 1000, 0.30]], top: 0.10, topLimit: 1200, topLimitWithChild: 1500 },
-    // § 6 Abs. 1 Nr. 1 Bürgergeld-Verordnung: Versicherungspauschale
+    // § 6 Abs. 1 Nr. 1 der Verordnung nach § 13 SGB II: Versicherungspauschale
     insurance: 30,
-    // § 12 Abs. 3 und 4 SGB II: Vermögensfreibeträge
+    // § 12 SGB II bis 30.06.2026: Vermögensfreibeträge mit Karenzzeit (alt)
     assets: { karenzFirst: 40000, karenzFurther: 15000, after: 15000 },
     // § 28 Abs. 7 SGB II: Teilhabe
     teilhabe: 15,
+    // § 72 SGB II: Sofortzuschlag für Kinder mit Regelbedarfsstufe 3 bis 6
+    sofort: 25,
+    // Rechtsstand: 'alt' = bis 30.06.2026, 'neu' = Neue Grundsicherung ab 01.07.2026
+    law: 'alt',
+  };
+  // Neue Grundsicherung (Dreizehntes Gesetz zur Änderung des SGB II vom 16.04.2026), in Kraft ab 01.07.2026
+  const NEW_LAW = {
+    law: 'neu',
+    // § 12 Abs. 2 SGB II n. F.: Freibetrag je Person nach Lebensalter, keine Karenzzeit beim Vermögen
+    assetsByAge: [[0, 5000], [30, 10000], [40, 12500], [50, 20000]],
+    // § 22 Abs. 1 SGB II n. F.: in der Karenzzeit höchstens das 1,5-Fache der angemessenen Unterkunftskosten
+    kduKarenzCap: 1.5,
   };
   // Jeder Datensatz gilt für einen Zeitraum (von/bis, JJJJ-MM-TT). Neue Werte, auch zur Jahresmitte, als neuen Eintrag ergänzen.
   const RULE_SETS = [
     { ...BASE, from: '2025-01-01', to: '2025-12-31', year: 2025, rb: { 1: 563, 2: 506, 3: 451, 4: 471, 5: 390, 6: 357 }, kindergeld: 255, source: 'Regelbedarfe 2025 (RBSFV 2025), Kindergeld 2025 (§ 66 EStG)' },
-    { ...BASE, from: '2026-01-01', to: '2026-12-31', year: 2026, rb: { 1: 563, 2: 506, 3: 451, 4: 471, 5: 390, 6: 357 }, kindergeld: 259, source: 'Regelbedarfe 2026 unverändert (Nullrunde), Kindergeld 2026 (§ 66 EStG)' },
+    { ...BASE, key: '2026', label: '2026 (Januar bis Juni)', from: '2026-01-01', to: '2026-06-30', year: 2026, rb: { 1: 563, 2: 506, 3: 451, 4: 471, 5: 390, 6: 357 }, kindergeld: 259, source: 'Regelbedarfe 2026 unverändert (Nullrunde), Kindergeld 2026 (§ 66 EStG), Rechtsstand bis 30.06.2026' },
+    { ...BASE, ...NEW_LAW, key: '2026-07', label: '2026 (ab 1. Juli, Neue Grundsicherung)', from: '2026-07-01', to: '2026-12-31', year: 2026, rb: { 1: 563, 2: 506, 3: 451, 4: 471, 5: 390, 6: 357 }, kindergeld: 259, source: 'Regelbedarfe 2026 unverändert (Nullrunde), Kindergeld 2026 (§ 66 EStG), Neue Grundsicherung ab 01.07.2026 (13. SGB II-Änderungsgesetz)' },
   ];
-  const RULES = Object.fromEntries(RULE_SETS.map((r) => [r.year, r]));
-  const YEARS = RULE_SETS.map((r) => r.year);
+  RULE_SETS[0].key = '2025'; RULE_SETS[0].label = '2025';
+  const RULES = Object.fromEntries(RULE_SETS.map((r) => [r.key, r]));
+  const YEARS = [...new Set(RULE_SETS.map((r) => r.year))];
+  /** Zeitraum-Schlüssel 'JJJJ' oder 'JJJJ-MM' in Jahr und Monat zerlegen. */
+  const splitKey = (k) => { const [y, m] = String(k).split('-').map(Number); return { year: y, month: m || 1 }; };
+  /** Passender Schlüssel für ein Datum (Standard: heute). */
+  function keyForDate(d = new Date()) {
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const hit = RULE_SETS.find((r) => iso >= r.from && iso <= r.to);
+    return hit ? hit.key : (iso < RULE_SETS[0].from ? RULE_SETS[0].key : String(Number(RULE_SETS[RULE_SETS.length - 1].year) + 1));
+  }
+  /** Freibetrag nach § 12 Abs. 2 SGB II n. F. für ein Lebensalter. Unbekanntes Alter: niedrigster Betrag. */
+  function assetAllowanceForAge(age, R) {
+    if (age === null || age === undefined || Number.isNaN(age)) return R.assetsByAge[0][1];
+    let v = R.assetsByAge[0][1];
+    for (const [from, amount] of R.assetsByAge) if (age >= from) v = amount;
+    return v;
+  }
   /** Werte für einen Monat. Fehlen Werte, wird der letzte Stand mit Kennzeichen „missing“ geliefert, nie still. */
   function rulesFor(year, month = 1) {
     const key = `${year}-${String(month).padStart(2, '0')}-01`;
     const hit = RULE_SETS.find((r) => key >= r.from && key <= r.to);
     if (hit) return hit;
     const last = RULE_SETS[RULE_SETS.length - 1];
-    return { ...last, missing: true, requested: Number(year) };
+    return { ...last, missing: true, requested: Number(year), key: String(year), label: `${year} (vorläufig mit Werten ${last.label})` };
   }
 
   const RBS_LABEL = { 1: 'Regelbedarfsstufe 1', 2: 'Regelbedarfsstufe 2', 3: 'Regelbedarfsstufe 3', 4: 'Regelbedarfsstufe 4', 5: 'Regelbedarfsstufe 5', 6: 'Regelbedarfsstufe 6' };
@@ -1285,7 +1314,7 @@ details.more.flat{border:0;margin:0;padding:0}
 
     adultsIn.forEach((a, i) => {
       const stage = single ? 1 : 2;
-      persons.push({ id: `a${i}`, label: single ? 'Antragsteller/in' : (i === 0 ? 'Person 1' : 'Person 2'), adult: true, stage, rb: R.rb[stage], src: a, mb: [], inBG: true, notes: [] });
+      persons.push({ id: `a${i}`, label: single ? 'Antragsteller/in' : (i === 0 ? 'Person 1' : 'Person 2'), adult: true, age: parseDE(a.age), stage, rb: R.rb[stage], src: a, mb: [], inBG: true, notes: [] });
     });
     kidsIn.forEach((c, i) => {
       const age = parseDE(c.age);
@@ -1328,7 +1357,11 @@ details.more.flat{border:0;margin:0;padding:0}
     // Phase: 'karenz' (Karenzzeit läuft), 'senkung' (Kostensenkungsfrist läuft), 'grenze' (Grenze gilt)
     const phase = h.phase || (h.karenz ? 'karenz' : 'grenze');
     if (limit !== null && rent > limit) {
-      if (phase === 'karenz') hints.push(`Bruttokaltmiete liegt ${fmt(rent - limit)} über der eingetragenen Grenze. In der Karenzzeit werden die tatsächlichen Unterkunftskosten anerkannt (§ 22 Abs. 1 SGB II, geltende Fassung prüfen). Ende der Karenzzeit vormerken.`);
+      if (phase === 'karenz' && R.kduKarenzCap) {
+        const cap = r2(limit * R.kduKarenzCap);
+        if (rent > cap) { rentRecognized = cap; warnings.push(`Karenzzeit: Unterkunftskosten höchstens das 1,5-Fache der Grenze, also ${fmt(cap)} statt ${fmt(rent)} (§ 22 Abs. 1 SGB II in der Fassung ab 01.07.2026). Ausnahmen im Einzelfall prüfen.`); }
+        else hints.push(`Bruttokaltmiete liegt ${fmt(rent - limit)} über der eingetragenen Grenze, aber unter dem 1,5-Fachen (${fmt(cap)}). In der Karenzzeit werden die tatsächlichen Unterkunftskosten anerkannt (§ 22 Abs. 1 SGB II). Ende der Karenzzeit vormerken.`);
+      } else if (phase === 'karenz') hints.push(`Bruttokaltmiete liegt ${fmt(rent - limit)} über der eingetragenen Grenze. In der Karenzzeit werden die tatsächlichen Unterkunftskosten anerkannt (§ 22 Abs. 1 SGB II in der Fassung bis 30.06.2026). Ende der Karenzzeit vormerken.`);
       else if (phase === 'senkung') hints.push(`Bruttokaltmiete liegt ${fmt(rent - limit)} über der Grenze. Während der Kostensenkungsfrist werden die tatsächlichen Kosten übernommen, solange eine Senkung nicht möglich oder nicht zumutbar ist, in der Regel längstens 6 Monate (§ 22 Abs. 1 SGB II).`);
       else { rentRecognized = limit; warnings.push(`Unterkunftskosten auf die eingetragene Grenze von ${fmt(limit)} begrenzt (§ 22 Abs. 1 SGB II). Voraussetzung: Kostensenkungsaufforderung erfolgt und Frist abgelaufen.`); }
     }
@@ -1403,38 +1436,62 @@ details.more.flat{border:0;margin:0;padding:0}
     if (bg.length && claimSum !== target) bg[0].claim = r2(bg[0].claim + (target - claimSum));
     if (adultIncome > 0 && bg.length) steps.push({ text: `Anrechenbares Einkommen der Erwachsenen ${fmt(adultIncome)} wird im Verhältnis der Bedarfe auf die Bedarfsgemeinschaft verteilt.`, norm: '§ 9 Abs. 2 Satz 3 SGB II' });
     steps.push({ text: `Gesamtbedarf ${fmt(totalNeed)} − anrechenbares Einkommen ${fmt(adultIncome)} = ${target > 0 ? `Anspruch ${fmt(target)}` : `kein Anspruch (Überschuss ${fmt(adultIncome - totalNeed)})`}`, norm: '§§ 9, 19 SGB II' });
+    // Sofortzuschlag (§ 72 SGB II): zusätzlich für Kinder mit Regelbedarfsstufe 3 bis 6, die einen Leistungsanspruch haben; wird nicht durch Einkommen gemindert
+    let sofortSum = 0;
+    for (const p of bg) {
+      if (!p.adult && p.stage >= 3 && p.stage <= 6 && p.claim > 0) {
+        p.sofort = R.sofort; p.claim = r2(p.claim + R.sofort); sofortSum = r2(sofortSum + R.sofort);
+        steps.push({ text: `${p.label}: Sofortzuschlag ${fmt(R.sofort)} zusätzlich`, norm: '§ 72 SGB II' });
+      }
+    }
+    const claimTotal = r2(target + sofortSum);
+    if (sofortSum > 0) steps.push({ text: `Anspruch ${fmt(target)} + Sofortzuschlag ${fmt(sofortSum)} = ${fmt(claimTotal)}`, norm: '§§ 19, 72 SGB II' });
 
     // --- Vermögen ---
     const assets = parseDE(input.assets);
-    const bgCount = persons.filter((p) => p.inBG).length || 1;
-    const assetLimit = h.karenz ? R.assets.karenzFirst + R.assets.karenzFurther * (bgCount - 1) : R.assets.after * bgCount;
+    const bgPersons = persons.filter((p) => p.inBG);
+    const bgCount = bgPersons.length || 1;
+    // § 65a SGB II: altes Vermögensrecht weiter für Bewilligungszeiträume, die vor dem 01.07.2026 begonnen haben
+    const newAssets = R.law === 'neu' && !input.oldAssetRules;
+    let assetLimit, assetLabel;
+    if (newAssets) {
+      const list = (bgPersons.length ? bgPersons : persons.slice(0, 1));
+      assetLimit = list.reduce((a, p) => a + assetAllowanceForAge(p.age, R), 0);
+      assetLabel = 'Freibetrag nach Lebensalter je Person, § 12 Abs. 2 SGB II n. F.';
+      if (assets !== null && list.some((p) => p.adult && (p.age === null || p.age === undefined))) warnings.push('Alter einer erwachsenen Person fehlt: Vermögensfreibetrag vorsichtig mit 5.000 € angesetzt. Bitte Alter eintragen.');
+    } else {
+      assetLimit = h.karenz ? R.assets.karenzFirst + R.assets.karenzFurther * (bgCount - 1) : R.assets.after * bgCount;
+      assetLabel = `${h.karenz ? 'Karenzzeit' : 'nach Karenzzeit'}, § 12 SGB II ${R.law === 'neu' ? 'in der Fassung bis 30.06.2026 (§ 65a SGB II)' : ''}`.trim();
+    }
     if (assets !== null) {
-      if (assets > assetLimit) warnings.push(`Vermögen ${fmt(assets)} liegt über dem Freibetrag von ${fmt(assetLimit)} (${h.karenz ? 'Karenzzeit' : 'nach Karenzzeit'}, § 12 SGB II). Hilfebedürftigkeit prüfen.`);
-      else hints.push(`Vermögen ${fmt(assets)} liegt unter dem Freibetrag von ${fmt(assetLimit)} (§ 12 SGB II).`);
+      if (assets > assetLimit) warnings.push(`Vermögen ${fmt(assets)} liegt über dem Freibetrag von ${fmt(assetLimit)} (${assetLabel}). Hilfebedürftigkeit prüfen.`);
+      else hints.push(`Vermögen ${fmt(assets)} liegt unter dem Freibetrag von ${fmt(assetLimit)} (${assetLabel}).`);
     }
     if (minors.length) hints.push(`Bildung und Teilhabe (§ 28 SGB II) zusätzlich prüfen, z. B. Teilhabe ${fmt(R.teilhabe)} monatlich, Schulbedarf, Mittagessen.`);
     if (target === 0 && totalNeed > 0) hints.push('Kein SGB II Anspruch: Wohngeld und Kinderzuschlag als vorrangige Leistungen prüfen.');
+    if (R.law === 'neu' && !h.karenz) hints.push('Seit 01.07.2026 keine Karenzzeit mehr beim Vermögen; bei der Unterkunft gilt sie weiter (gedeckelt auf das 1,5-Fache).');
 
     const totals = {
       bedarf: r2(persons.reduce((a, p) => a + (p.bedarf || 0), 0)),
       bgNeed: totalNeed,
       income: adultIncome,
       childIncome: r2(persons.filter((p) => !p.adult).reduce((a, p) => a + (p.income || 0), 0)),
-      claim: target,
+      claim: claimTotal,
+      sofort: sofortSum,
       surplus: r2(Math.max(0, adultIncome - totalNeed)),
       kdu: kduTotal,
       rb: r2(persons.filter((p) => p.inBG).reduce((a, p) => a + p.rb, 0)),
       mb: r2(persons.filter((p) => p.inBG).reduce((a, p) => a + p.mbSum, 0)),
     };
     const prev = parseDE(input.previous);
-    if (prev !== null) totals.delta = r2(target - prev);
+    if (prev !== null) totals.delta = r2(claimTotal - prev);
     return { persons, totals, steps, warnings, hints, R, assetLimit };
   }
 
   const eur = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
   function fmt(n) { return eur.format(n || 0).replace(/ /g, ' '); }
 
-  return { RULES, RULE_SETS, YEARS, rulesFor, compute, employmentAllowance, parseDE, childStage, fmt, r2 };
+  return { RULES, RULE_SETS, YEARS, rulesFor, splitKey, keyForDate, assetAllowanceForAge, compute, employmentAllowance, parseDE, childStage, fmt, r2 };
 });
 
 </script>
@@ -1525,7 +1582,8 @@ details.more.flat{border:0;margin:0;padding:0}
     // Vermögen
     const assets = num(c.assets);
     if (erst || assets > 0) {
-      if (h.karenz) add({ id: 'vermoegen', group: 'Vermögen', title: 'Erklärung, dass kein erhebliches Vermögen vorhanden ist', letter: 'eine Erklärung, ob erhebliches Vermögen vorhanden ist (Anlage zum Vermögen)', norm: '§ 12 Abs. 4 SGB II', why: 'In der Karenzzeit genügt grundsätzlich die Selbstauskunft.' });
+      if (c.newAssets) add({ id: 'vermoegen', group: 'Vermögen', title: 'Nachweise über Vermögen (Sparbücher, Bausparverträge, Versicherungen, Fahrzeuge)', letter: 'Nachweise über vorhandenes Vermögen, z. B. Sparbücher, Bausparverträge, Lebensversicherungen und Fahrzeuge', norm: '§ 12 SGB II', why: 'Seit 01.07.2026 keine Karenzzeit beim Vermögen; Freibetrag je Person nach Lebensalter (5.000 € bis 20.000 €).' });
+      else if (h.karenz) add({ id: 'vermoegen', group: 'Vermögen', title: 'Erklärung, dass kein erhebliches Vermögen vorhanden ist', letter: 'eine Erklärung, ob erhebliches Vermögen vorhanden ist (Anlage zum Vermögen)', norm: '§ 12 Abs. 4 SGB II', why: 'In der Karenzzeit genügt grundsätzlich die Selbstauskunft.' });
       else add({ id: 'vermoegen', group: 'Vermögen', title: 'Nachweise über Vermögen (Sparbücher, Bausparverträge, Versicherungen, Fahrzeuge)', letter: 'Nachweise über vorhandenes Vermögen, z. B. Sparbücher, Bausparverträge, Lebensversicherungen und Fahrzeuge', norm: '§ 12 SGB II', why: 'Nach der Karenzzeit Freibetrag 15.000 € je Person.' });
     }
 
@@ -1569,7 +1627,8 @@ details.more.flat{border:0;margin:0;padding:0}
     add('zeitraum', 'Bewilligungszeitraum festlegen: in der Regel 12 Monate, bei vorläufiger Entscheidung oder unangemessenen Unterkunftskosten Verkürzung auf 6 Monate.', '§ 41 Abs. 3 SGB II');
     const limit = num(h.limit), rent = num(h.rent);
     if (limit !== null && rent !== null && rent > limit) {
-      if (h.karenz) add('kdu', 'Miete liegt über der örtlichen Grenze: in der Karenzzeit tatsächliche Kosten anerkennen, Ende der Karenzzeit vormerken.', '§ 22 Abs. 1 SGB II');
+      if (h.karenz && c.newLaw) add('kdu', rent > limit * 1.5 ? 'Miete liegt über dem 1,5-Fachen der örtlichen Grenze: in der Karenzzeit nur bis zum 1,5-Fachen anerkennen (Ausnahmen prüfen), Ende der Karenzzeit vormerken.' : 'Miete liegt über der örtlichen Grenze, aber unter dem 1,5-Fachen: in der Karenzzeit tatsächliche Kosten anerkennen, Ende der Karenzzeit vormerken.', '§ 22 Abs. 1 SGB II', rent > limit * 1.5 ? 'hoch' : 'normal');
+      else if (h.karenz) add('kdu', 'Miete liegt über der örtlichen Grenze: in der Karenzzeit tatsächliche Kosten anerkennen, Ende der Karenzzeit vormerken.', '§ 22 Abs. 1 SGB II');
       else add('kdu', 'Miete liegt über der örtlichen Grenze: Kostensenkungsaufforderung prüfen (in der Regel höchstens 6 Monate Übergang).', '§ 22 Abs. 1 SGB II', 'hoch');
     }
     if (c.single && minors.length) add('mbae', 'Mehrbedarf für Alleinerziehende festsetzen; alleinige Pflege und Erziehung feststellen.', '§ 21 Abs. 3 SGB II');
@@ -1745,7 +1804,7 @@ details.more.flat{border:0;margin:0;padding:0}
       run: (v) => {
         const d = parse(v.beginn); if (!d) return null;
         const first = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-        return [out('Karenzzeit endet am', addDays(addMonths(first, 12), -1), '§ 22 Abs. 1, § 12 Abs. 3 SGB II', { noShift: true, note: 'Ein Jahr ab Beginn des Monats des erstmaligen Bezugs. Unterbrechungen und Reform zu prüfen.' })];
+        return [out('Karenzzeit endet am', addDays(addMonths(first, 12), -1), '§ 22 Abs. 1 SGB II', { noShift: true, note: 'Ein Jahr ab Beginn des Monats des erstmaligen Bezugs; seit 01.07.2026 auf das 1,5-Fache der angemessenen Kosten gedeckelt. Die Karenzzeit beim Vermögen (§ 12 a. F.) gilt nur noch für Bewilligungszeiträume, die vor dem 01.07.2026 begonnen haben. Unterbrechungen prüfen.' })];
       },
     },
     kostensenkung: {
@@ -2000,14 +2059,14 @@ details.more.flat{border:0;margin:0;padding:0}
     allein: 'Eine Mutter lebt nach einer Trennung mit ihrem 5 Jahre alten Kind allein in Marl. Erstantrag am 19.11.2026. Die Bruttokaltmiete beträgt 612 Euro, die Heizkosten 221 Euro monatlich. Kindergeld wird bezogen.',
     paar: 'Ein Ehepaar wohnt mit zwei Kindern im Alter von 7 und 16 Jahren in Herten. Die Bruttokaltmiete beträgt 660 €, die Heizkosten 160 €. Der Ehemann arbeitet in Teilzeit und verdient netto 1.150 Euro, brutto 1.500 Euro. Warmwasser über Durchlauferhitzer.',
   };
-  const thisYear = new Date().getFullYear();
-  const defaultYear = W.YEARS.includes(thisYear) ? thisYear : Math.max(...W.YEARS);
-  const adult = () => ({ gross: '', net: '', other: '', pregnant: false });
+  const defaultYear = W.keyForDate(new Date());
+  const RS = () => W.rulesFor(W.splitKey(s.year).year, W.splitKey(s.year).month);
+  const adult = () => ({ age: '', gross: '', net: '', other: '', pregnant: false });
   const fresh = () => ({
     kind: 'erst', year: defaultYear, single: true, adults: [adult(), adult()], children: [],
     housing: { rent: '', heat: '', ww: 'central', limit: '', phase: 'karenz' },
     a41From: '', a41To: '',
-    assets: '', previous: '', priorDecision: 'unknown', text: '',
+    assets: '', oldAssetRules: false, previous: '', priorDecision: 'unknown', text: '',
     tab: 'calc', check: {}, done: {}, deadline: K.addDays(14), appDate: '', frame: false,
   });
   let s = fresh();
@@ -2019,9 +2078,9 @@ details.more.flat{border:0;margin:0;padding:0}
   function setPath(path, value) { const keys = path.split('.'); const last = keys.pop(); const obj = keys.reduce((o, k) => o[k], s); obj[last] = value; }
   const hasData = () => { const strip = (x) => JSON.stringify({ ...x, tab: '', deadline: '' }); return strip(s) !== strip(fresh()); };
   const housingIn = () => ({ ...s.housing, karenz: s.housing.phase === 'karenz', wwDecentral: s.housing.ww === 'decentral' });
-  const input = () => ({ year: s.year, kind: s.kind, adults: s.single ? [s.adults[0]] : s.adults, children: s.children, housing: housingIn(), assets: s.assets, previous: s.kind === 'wba' ? s.previous : '' });
+  const input = () => ({ year: W.splitKey(s.year).year, month: W.splitKey(s.year).month, oldAssetRules: s.oldAssetRules, kind: s.kind, adults: s.single ? [s.adults[0]] : s.adults, children: s.children, housing: housingIn(), assets: s.assets, previous: s.kind === 'wba' ? s.previous : '' });
 
-  const checkInput = () => ({ kind: s.kind, single: s.single, adults: s.adults, children: s.children, housing: housingIn(), assets: s.assets, priorDecision: s.priorDecision });
+  const checkInput = () => ({ newLaw: RS().law === 'neu', newAssets: RS().law === 'neu' && !s.oldAssetRules, kind: s.kind, single: s.single, adults: s.adults, children: s.children, housing: housingIn(), assets: s.assets, priorDecision: s.priorDecision });
   const checkItems = () => K.items(checkInput());
   const missingItems = () => checkItems().filter((i) => K.stateOf(i, s.check) === 'fehlt');
   const letterText = () => K.letter(checkItems(), s.check, { deadline: s.deadline, appDate: s.appDate, frame: s.frame, kind: s.kind });
@@ -2037,13 +2096,14 @@ details.more.flat{border:0;margin:0;padding:0}
     return `<div class="kid">
       <div class="f"><label for="i_children.${i}.age">Alter</label><input id="i_children.${i}.age" data-bind="children.${i}.age" data-int inputmode="numeric" maxlength="2" placeholder="Jahre" value="${esc(c.age)}"></div>
       ${moneyField('Unterhalt / UVG', `children.${i}.maintenance`, '', 'leer = unklar')}
-      <label class="toggle kg"><input type="checkbox" data-bind="children.${i}.kg" ${c.kg ? 'checked' : ''}> Kindergeld ${fmt(W.rulesFor(s.year).kindergeld)}</label>
+      <label class="toggle kg"><input type="checkbox" data-bind="children.${i}.kg" ${c.kg ? 'checked' : ''}> Kindergeld ${fmt(RS().kindergeld)}</label>
       <button type="button" class="icon-btn" data-action="removeKid" data-i="${i}" aria-label="Kind ${i + 1} entfernen">${ICON.x}</button>
     </div>`;
   }
   function adultIncome(a, i) {
     const name = s.single ? '' : (i === 0 ? 'Person 1' : 'Person 2');
     return `${name ? `<div class="section-label">${name}</div>` : ''}
+      <div class="f row-gap"><label for="i_adults.${i}.age">Alter</label><input id="i_adults.${i}.age" data-bind="adults.${i}.age" data-int inputmode="numeric" maxlength="2" placeholder="Jahre (für Vermögensfreibetrag)" value="${esc(a.age || '')}"></div>
       <div class="grid three">${moneyField('Netto aus Arbeit', `adults.${i}.net`)}${moneyField('Brutto aus Arbeit', `adults.${i}.gross`, 'Für den Freibetrag')}${moneyField('Sonstiges Einkommen', `adults.${i}.other`, 'Rente, ALG I, Unterhalt …')}</div>
       <label class="toggle row-gap"><input type="checkbox" data-bind="adults.${i}.pregnant" ${a.pregnant ? 'checked' : ''}> Schwanger ab der 13. Woche</label>`;
   }
@@ -2052,7 +2112,7 @@ details.more.flat{border:0;margin:0;padding:0}
     return found.length ? `<div class="note bad row-gap"><b>Echte Daten?</b> Erkannt: ${esc(found.join(', '))}. Bitte nur erfundene Fälle.</div>` : '';
   }
   function renderForm() {
-    const R = W.rulesFor(s.year);
+    const R = RS();
     const n = s.children.length;
     const h = s.housing;
     $('#form').innerHTML = `
@@ -2094,7 +2154,7 @@ details.more.flat{border:0;margin:0;padding:0}
           <div class="grid">${moneyField('Örtliche Grenze Bruttokaltmiete', 'housing.limit', 'Aus der Richtlinie des Trägers. Leer = keine Prüfung', 'optional')}
           </div><div class="label row-gap">Stand bei der Unterkunft</div>
           <div class="chips"><button type="button" class="chip" data-action="phase" data-v="karenz" ${pressed(h.phase === 'karenz')}>Karenzzeit läuft (1. Jahr)</button><button type="button" class="chip" data-action="phase" data-v="senkung" ${pressed(h.phase === 'senkung')}>Kostensenkungsfrist läuft</button><button type="button" class="chip" data-action="phase" data-v="grenze" ${pressed(h.phase === 'grenze')}>Grenze gilt</button></div>
-          <div class="hint">Karenzzeit und Kostensenkungsfrist: tatsächliche Miete. „Grenze gilt“ erst nach Kostensenkungsaufforderung und Fristablauf. Heizkosten sind von der Karenzzeit nicht erfasst.</div>
+          <div class="hint">${R.law === 'neu' ? 'Karenzzeit (1 Jahr): tatsächliche Miete, höchstens das 1,5-Fache der Grenze. Kostensenkungsfrist: tatsächliche Miete.' : 'Karenzzeit und Kostensenkungsfrist: tatsächliche Miete.'} „Grenze gilt“ erst nach Kostensenkungsaufforderung und Fristablauf. Heizkosten sind von der Karenzzeit nicht erfasst.</div>
         </div></details>
       </section>
 
@@ -2102,7 +2162,8 @@ details.more.flat{border:0;margin:0;padding:0}
         <div class="card-head"><h2><span class="num-badge">4</span>Antrag</h2>
           <div class="seg" role="group" aria-label="Antragsart"><button type="button" data-action="kind" data-v="erst" ${pressed(s.kind === 'erst')}>Erstantrag</button><button type="button" data-action="kind" data-v="wba" ${pressed(s.kind === 'wba')}>Weiterbewilligung</button></div></div>
         <div class="grid">
-          <div class="f"><label for="i_year">Leistungsjahr</label><select id="i_year" data-bind="year" data-num>${[...W.YEARS, Math.max(...W.YEARS) + 1].map((y) => `<option value="${y}" ${y === Number(s.year) ? 'selected' : ''}>${y}</option>`).join('')}</select><div class="hint">${W.YEARS.includes(Number(s.year)) ? `Regelbedarf Stufe 1: ${fmt(R.rb[1])} · Kindergeld ${fmt(R.kindergeld)}` : 'Werte für dieses Jahr nicht hinterlegt'}</div></div>
+          <div class="f"><label for="i_year">Leistungszeitraum / Rechtsstand</label><select id="i_year" data-bind="year">${[...W.RULE_SETS.map((r) => [r.key, r.label]), [String(Math.max(...W.YEARS) + 1), `${Math.max(...W.YEARS) + 1} (Werte noch nicht festgelegt)`]].map(([k, l]) => `<option value="${k}" ${k === String(s.year) ? 'selected' : ''}>${l}</option>`).join('')}</select><div class="hint">${R.missing ? 'Werte für diesen Zeitraum noch nicht festgelegt; gerechnet wird vorläufig mit dem letzten Stand.' : `Regelbedarf Stufe 1: ${fmt(R.rb[1])} · Kindergeld ${fmt(R.kindergeld)} · Sofortzuschlag ${fmt(R.sofort)} je Kind`}</div></div>
+          ${R.law === 'neu' ? `<label class="toggle row-gap"><input type="checkbox" data-bind="oldAssetRules" ${s.oldAssetRules ? 'checked' : ''}> Bewilligungszeitraum hat vor dem 01.07.2026 begonnen (altes Vermögensrecht, § 65a SGB II)</label>` : ''}
           ${moneyField('Vermögen gesamt', 'assets', 'Konto, Sparbuch usw. Ein angemessenes Auto zählt nicht.', 'optional')}
           ${s.kind === 'wba' ? `${moneyField('Bisheriger Anspruch', 'previous', 'Zum Vergleich', 'optional')}
           <div class="f"><span class="label">Bisherige Bewilligung</span><div class="chips"><button type="button" class="chip" data-action="prior" data-v="final" ${pressed(s.priorDecision === 'final')}>Endgültig</button><button type="button" class="chip" data-action="prior" data-v="provisional" ${pressed(s.priorDecision === 'provisional')}>Vorläufig</button></div></div>` : ''}
@@ -2196,7 +2257,7 @@ details.more.flat{border:0;margin:0;padding:0}
       ${s.tab === 'calc' && missing ? `<button type="button" class="cta" data-action="tab" data-v="check"><span><b>${missing} Unterlage${missing > 1 ? 'n' : ''} fehlen</b><small>Checkliste prüfen und Zwischenmitteilung erstellen</small></span><span aria-hidden="true">→</span></button>` : ''}
       ${notes.length && s.tab === 'calc' ? `<div class="notes">${notes.join('')}</div>` : ''}
       ${tabsHTML(items, missing, todoList, todoOpen)}
-      <p class="foot">Prüfhilfe für fiktive Fälle, kein Bescheid. Werte ${r.R.year}: ${esc(r.R.source)}. Vor Verwendung Rechtsstand und örtliche Richtlinien prüfen, insbesondere Änderungen durch die Reform zur Grundsicherung. Keine Speicherung, keine Übertragung.</p>`;
+      <p class="foot">Prüfhilfe für fiktive Fälle, kein Bescheid. Werte ${esc(r.R.label || String(r.R.year))}: ${esc(r.R.source)}. Vor Verwendung Rechtsstand und örtliche Richtlinien prüfen, insbesondere Änderungen durch die Reform zur Grundsicherung. Keine Speicherung, keine Übertragung.</p>`;
     $('#mobileBar').innerHTML = `<span>${claim > 0 || !touched ? 'Anspruch / Monat' : 'Kein Anspruch'}</span><b>${fmt(claim)}</b>`;
   }
   function renderTop() {
@@ -2211,7 +2272,7 @@ details.more.flat{border:0;margin:0;padding:0}
     const t = r.totals;
     const lines = [`Berechnungsübersicht SGB II (Prüfhilfe, Leistungsjahr ${r.R.year})`, ''];
     r.steps.forEach((x, i) => lines.push(`${i + 1}. ${x.text} (${x.norm})`));
-    lines.push('', `Gesamtbedarf: ${fmt(t.bedarf)}`, `Anrechenbares Einkommen: ${fmt(t.income + t.childIncome)}`, `Voraussichtlicher Anspruch: ${fmt(t.claim)} monatlich`);
+    lines.push('', `Gesamtbedarf: ${fmt(t.bedarf)}`, `Anrechenbares Einkommen: ${fmt(t.income + t.childIncome)}`, `Voraussichtlicher Anspruch: ${fmt(t.claim)} monatlich${t.sofort ? ` (inkl. Sofortzuschlag ${fmt(t.sofort)})` : ''}`);
     if (r.warnings.length) lines.push('', 'Hinweise:', ...r.warnings.map((w) => `- ${w}`));
     lines.push('', 'Rechnerische Prüfhilfe, kein Bescheid. Maßgeblich sind die im Leistungszeitraum geltende Rechtslage und die örtlichen Richtlinien.');
     return lines.join('\n');
@@ -2241,7 +2302,7 @@ details.more.flat{border:0;margin:0;padding:0}
     const gross = s.text.match(/brutto\s+(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+)\s*(?:€|euro)/i) || s.text.match(/(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+)\s*(?:€|euro)\s+brutto/i);
     if (gross && f.currentIncome) set('adults.0.gross', gross[1]);
     if (f.maintenanceAmount && s.children.length === 1) set('children.0.maintenance', f.maintenanceAmount);
-    if (f.periodStart || f.applicationDate) { const y = Number((f.periodStart || f.applicationDate).slice(-4)); if (W.YEARS.includes(y)) s.year = y; }
+    if (f.periodStart || f.applicationDate) { const [dd, mm, yy] = (f.periodStart || f.applicationDate).split('.').map(Number); s.year = W.keyForDate(new Date(yy, mm - 1, dd)); }
     s.housing.phase = s.kind === 'wba' ? 'grenze' : 'karenz';
     render();
     filled.forEach((x) => { const el = document.getElementById(`i_${x}`); if (el) el.classList.add('flash'); });
