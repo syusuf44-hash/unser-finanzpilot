@@ -221,6 +221,7 @@ details.more.flat{border:0;margin:0;padding:0}
 .cta b { display: block; font-size: 15px; }
 .cta small { display: block; font-size: 12.5px; opacity: .9; }
 
+mark { background: var(--warn-soft); color: var(--warn); border-radius: 4px; padding: 0 2px; }
 /* Checkliste */
 .checks { display: grid; gap: 8px; }
 .check { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 11px 12px; border-radius: 13px; border: 1px solid var(--line); background: var(--card2); }
@@ -1838,6 +1839,32 @@ details.more.flat{border:0;margin:0;padding:0}
   'use strict';
   const v = (x, ph) => (x && String(x).trim()) || `[${ph}]`;
   const eur = (x) => { const n = Number(String(x || '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) && String(x).trim() ? n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }).replace(/ /g, ' ') : '[Betrag]'; };
+  /** Datum TT.MM.JJJJ ± Monate (Monatsende beachten) und ± Tage. Ungültig: ''. */
+  function shiftDE(de, months = 0, days = 0) {
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(de || '').trim());
+    if (!m) return '';
+    const y = +m[3], mo = +m[2] - 1 + months, d = +m[1];
+    const last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    const t = new Date(Date.UTC(y, mo, Math.min(d, last)) + days * 86400000);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(t.getUTCDate())}.${pad(t.getUTCMonth() + 1)}.${t.getUTCFullYear()}`;
+  }
+  const todayDE = () => { const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`; };
+  const toNum = (x) => { const raw = String(x || '').trim().replace(/\s|€/g, ''); if (!raw) return null; const n = Number(/,/.test(raw) ? raw.replace(/\./g, '').replace(',', '.') : raw); return Number.isFinite(n) ? n : null; };
+  /** Aufstellung „Monat; Person; Betrag“ je Zeile. */
+  function parseRows(text) {
+    const rows = [], bad = [];
+    String(text || '').split('\n').map((x) => x.trim()).filter(Boolean).forEach((line) => {
+      const parts = line.split(/\s*[;|]\s*|\t/);
+      const amount = toNum(parts[parts.length - 1]);
+      if (parts.length < 2 || amount === null) { bad.push(line); return; }
+      rows.push({ month: parts[0], person: parts.length > 2 ? parts.slice(1, -1).join(' ') : '', amount });
+    });
+    return { rows, bad, sum: Math.round(rows.reduce((a, r) => a + r.amount, 0) * 100) / 100 };
+  }
+  const eurN = (n) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }).replace(/ /g, ' ');
+  /** Offene Platzhalter wie [Datum]; Anrede und Name werden im Word-Dokument ergänzt. */
+  const placeholders = (text) => [...new Set((String(text).match(/\[[^\]\n]{1,60}\]/g) || []).filter((x) => !['[Anrede]', '[Name]'].includes(x)))];
   const BELEHRUNG_66 = 'Nach § 60 des Ersten Buches Sozialgesetzbuch (SGB I) sind Sie verpflichtet, alle Tatsachen anzugeben, die für die Leistung erheblich sind, und auf Verlangen Beweisurkunden vorzulegen. Kommen Sie dieser Pflicht bis zum genannten Datum nicht nach und wird dadurch die Aufklärung des Sachverhalts erheblich erschwert, können die Leistungen nach § 66 Abs. 1 SGB I bis zur Nachholung der Mitwirkung ganz oder teilweise versagt werden. Wird die Mitwirkung nachgeholt und liegen die Leistungsvoraussetzungen vor, können die Leistungen nach § 67 SGB I nachträglich ganz oder teilweise erbracht werden.';
 
   const NORM48 = {
@@ -1850,30 +1877,66 @@ details.more.flat{border:0;margin:0;padding:0}
   const T = {
     anhoerung: {
       title: 'Anhörung vor Aufhebung und Erstattung', norm: '§ 24 SGB X',
-      fields: [['von', 'Zeitraum von', 'date'], ['bis', 'Zeitraum bis', 'date'], ['betrag', 'Überzahlung gesamt in €', 'money'], ['grund', 'Rechtsgrundlage', 'select', Object.entries(NORM48).map(([k, x]) => [k, x[0]])], ['sachverhalt', 'Sachverhalt (Tatsachen, ohne Namen)', 'text'], ['frist', 'Äußerung bis', 'date']],
+      fields: [['von', 'Zeitraum von', 'date'], ['bis', 'Zeitraum bis', 'date'], ['betrag', 'Überzahlung gesamt in €', 'money'], ['grund', 'Rechtsgrundlage', 'select', Object.entries(NORM48).map(([k, x]) => [k, x[0]])], ['sachverhalt', 'Sachverhalt (Tatsachen, ohne Namen)', 'text'], ['aufstellung', 'Aufstellung: eine Zeile je Monat und Person, z. B. „07/2026; Person 1; 120,50“ (leer = eigene Anlage)', 'text'], ['frist', 'Äußerung bis', 'date']],
+      betreff: 'Anhörung vor Aufhebung und Erstattung von Leistungen nach dem SGB II',
+      defaults: () => ({ frist: shiftDE(todayDE(), 0, 14) }),
+      check: (f) => {
+        const a = parseRows(f.aufstellung), out = [];
+        if (a.bad.length) out.push(`Aufstellung: ${a.bad.length} Zeile(n) nicht lesbar („${a.bad[0]}“). Format: Monat; Person; Betrag`);
+        const b = toNum(f.betrag);
+        if (a.rows.length && b !== null && Math.abs(b - a.sum) > 0.005) out.push(`Summe der Aufstellung (${eurN(a.sum)}) weicht vom Gesamtbetrag (${eurN(b)}) ab.`);
+        return out;
+      },
       render: (f) => {
         const n = NORM48[f.grund] || NORM48['48-3'];
+        const a = parseRows(f.aufstellung);
+        const total = String(f.betrag || '').trim() ? eur(f.betrag) : a.rows.length ? eurN(a.sum) : eur('');
+        const table = a.rows.length ? ['', 'Aufstellung der Überzahlung:', ...a.rows.map((r) => `${r.month}${r.person ? ` – ${r.person}` : ''}: ${eurN(r.amount)}`), `Summe: ${eurN(a.sum)}`] : [];
         return [
-          `nach den mir vorliegenden Unterlagen haben Sie im Zeitraum vom ${v(f.von, 'Beginn')} bis ${v(f.bis, 'Ende')} Leistungen nach dem Zweiten Buch Sozialgesetzbuch (SGB II) in Höhe von insgesamt ${eur(f.betrag)} zu Unrecht erhalten.`,
+          `nach den mir vorliegenden Unterlagen haben Sie im Zeitraum vom ${v(f.von, 'Beginn')} bis ${v(f.bis, 'Ende')} Leistungen nach dem Zweiten Buch Sozialgesetzbuch (SGB II) in Höhe von insgesamt ${total} zu Unrecht erhalten.`,
           '', 'Sachverhalt:', v(f.sachverhalt, 'Sachverhalt mit Datum und Beleg'), '', n[1], '',
-          `Ich beabsichtige daher, die Bewilligung für diesen Zeitraum nach ${n[0]} in Verbindung mit § 40 Abs. 2 Nr. 3 SGB II und ${n[2]} insoweit aufzuheben und die überzahlten Leistungen nach § 50 Abs. 1 SGB X zurückzufordern. Die Beträge je Monat und je Person ergeben sich aus der beigefügten Aufstellung.`,
+          `Ich beabsichtige daher, die Bewilligung für diesen Zeitraum nach ${n[0]} in Verbindung mit § 40 Abs. 2 Nr. 3 SGB II und ${n[2]} insoweit aufzuheben und die überzahlten Leistungen nach § 50 Abs. 1 SGB X zurückzufordern. Die Beträge je Monat und je Person ergeben sich aus der ${a.rows.length ? 'folgenden' : 'beigefügten'} Aufstellung.`,
+          ...table,
           '', `Bevor ich entscheide, erhalten Sie nach § 24 SGB X Gelegenheit, sich bis zum ${v(f.frist, 'Datum')} zu den für die Entscheidung erheblichen Tatsachen zu äußern. Teilen Sie mir bitte insbesondere mit, ob die genannten Tatsachen zutreffen und ob Gründe vorliegen, die gegen eine Aufhebung sprechen. Äußern Sie sich nicht, wird nach Aktenlage entschieden.`,
         ].join('\n');
       },
     },
     kostensenkung: {
       title: 'Kostensenkungsaufforderung Unterkunft', norm: '§ 22 Abs. 1 SGB II',
-      fields: [['miete', 'Tatsächliche Bruttokaltmiete in €', 'money'], ['grenze', 'Angemessene Bruttokaltmiete in €', 'money'], ['personen', 'Personen im Haushalt', 'num'], ['bis', 'Tatsächliche Kosten längstens bis', 'date']],
-      render: (f) => [
-        `die Aufwendungen für Ihre Unterkunft (Bruttokaltmiete ${eur(f.miete)} monatlich) übersteigen den für einen Haushalt mit ${v(f.personen, 'Anzahl')} Personen angemessenen Umfang. Angemessen ist nach den örtlichen Vorgaben eine Bruttokaltmiete von bis zu ${eur(f.grenze)} monatlich.`,
-        '', `Nach § 22 Abs. 1 SGB II werden unangemessene Aufwendungen nur so lange anerkannt, wie es Ihnen nicht möglich oder nicht zumutbar ist, sie durch einen Wohnungswechsel, durch Vermieten oder auf andere Weise zu senken, in der Regel jedoch längstens für sechs Monate. Die tatsächlichen Aufwendungen werden daher voraussichtlich längstens bis zum ${v(f.bis, 'Datum')} übernommen. Danach wird nur noch der angemessene Betrag berücksichtigt.`,
-        '', 'Bitte bemühen Sie sich um eine Senkung der Kosten und weisen Sie Ihre Bemühungen nach (z. B. Wohnungsangebote, Bewerbungen, Absagen). Gründe, aus denen Ihnen eine Senkung nicht möglich oder nicht zumutbar ist (z. B. Gesundheit, Schulbesuch der Kinder, Pflege), teilen Sie mir bitte mit. Vor dem Abschluss eines neuen Mietvertrags holen Sie bitte eine Zusicherung nach § 22 Abs. 4 SGB II ein.',
-        '', 'Die Heizkosten werden gesondert auf ihre Angemessenheit geprüft.',
-      ].join('\n'),
+      fields: [['miete', 'Tatsächliche Bruttokaltmiete in €', 'money'], ['grenze', 'Angemessene Bruttokaltmiete in €', 'money'], ['personen', 'Personen im Haushalt', 'num'], ['karenzEnde', 'Karenzzeit endet am (leer = bereits abgelaufen)', 'date'], ['bis', 'Tatsächliche Kosten längstens bis (leer = automatisch)', 'date']],
+      betreff: 'Aufwendungen für Ihre Unterkunft – Aufforderung zur Kostensenkung',
+      fromCase: (c) => ({ miete: c.rent, grenze: c.limit, personen: c.persons ? String(c.persons) : '' }),
+      autoBis: (f) => shiftDE(String(f.karenzEnde || '').trim() || todayDE(), 6, 0),
+      check: (f) => {
+        const m = toNum(f.miete), g = toNum(f.grenze), out = [];
+        if (m !== null && g !== null && m <= g) out.push('Die Miete liegt nicht über der Grenze. Eine Kostensenkungsaufforderung ist dann nicht nötig.');
+        return out;
+      },
+      render: (f) => {
+        const m = toNum(f.miete), g = toNum(f.grenze);
+        const inKarenz = !!String(f.karenzEnde || '').trim();
+        const bis = String(f.bis || '').trim() || T.kostensenkung.autoBis(f);
+        const capTxt = g !== null ? ` (${eurN(Math.round(g * 150) / 100)})` : '';
+        const out = [
+          `die Aufwendungen für Ihre Unterkunft (Bruttokaltmiete ${eur(f.miete)} monatlich) übersteigen den für einen Haushalt mit ${v(f.personen, 'Anzahl')} Personen angemessenen Umfang. Angemessen ist nach den örtlichen Vorgaben eine Bruttokaltmiete von bis zu ${eur(f.grenze)} monatlich.`,
+        ];
+        if (inKarenz) {
+          out.push('', `Im ersten Jahr des Leistungsbezugs (Karenzzeit) werden die tatsächlichen Aufwendungen für die Unterkunft anerkannt, seit dem 01.07.2026 jedoch höchstens bis zum Eineinhalbfachen des angemessenen Betrags${capTxt} (§ 22 Abs. 1 SGB II). Ihre Karenzzeit endet am ${f.karenzEnde}.${m !== null && g !== null && m > g * 1.5 ? ' Ihre Bruttokaltmiete liegt bereits über diesem Höchstbetrag; berücksichtigt wird daher schon jetzt nur der Höchstbetrag.' : ''}`);
+          out.push('', `Nach Ablauf der Karenzzeit werden unangemessene Aufwendungen nur so lange anerkannt, wie es Ihnen nicht möglich oder nicht zumutbar ist, sie durch einen Wohnungswechsel, durch Vermieten oder auf andere Weise zu senken, in der Regel jedoch längstens für sechs Monate. Die tatsächlichen Aufwendungen werden daher voraussichtlich längstens bis zum ${bis} übernommen. Danach wird nur noch der angemessene Betrag berücksichtigt.`);
+        } else {
+          out.push('', `Nach § 22 Abs. 1 SGB II werden unangemessene Aufwendungen nur so lange anerkannt, wie es Ihnen nicht möglich oder nicht zumutbar ist, sie durch einen Wohnungswechsel, durch Vermieten oder auf andere Weise zu senken, in der Regel jedoch längstens für sechs Monate. Die tatsächlichen Aufwendungen werden daher voraussichtlich längstens bis zum ${bis} übernommen. Danach wird nur noch der angemessene Betrag berücksichtigt.`);
+        }
+        out.push('', 'Bitte bemühen Sie sich um eine Senkung der Kosten und weisen Sie Ihre Bemühungen nach (z. B. Wohnungsangebote, Bewerbungen, Absagen). Gründe, aus denen Ihnen eine Senkung nicht möglich oder nicht zumutbar ist (z. B. Gesundheit, Schulbesuch der Kinder, Pflege), teilen Sie mir bitte mit. Vor dem Abschluss eines neuen Mietvertrags holen Sie bitte eine Zusicherung nach § 22 Abs. 4 SGB II ein.',
+        '', 'Die Heizkosten werden gesondert auf ihre Angemessenheit geprüft.');
+        return out.join('\n');
+      },
     },
     erinnerung: {
       title: 'Erinnerung vor Versagung', norm: '§§ 60, 66 Abs. 3 SGB I',
       fields: [['vom', 'Ursprüngliche Anforderung vom', 'date'], ['liste', 'Noch fehlende Unterlagen (eine pro Zeile)', 'text'], ['frist', 'Neue Frist bis', 'date']],
+      betreff: 'Erinnerung: Fehlende Unterlagen für Ihre Leistungen nach dem SGB II',
+      defaults: () => ({ frist: shiftDE(todayDE(), 0, 14) }),
+      fromCase: (c) => ({ liste: (c.missing || []).join('\n'), vom: c.letterDate || '' }),
       render: (f) => {
         const items = String(f.liste || '').split('\n').map((x) => x.trim()).filter(Boolean);
         return [
@@ -1886,6 +1949,8 @@ details.more.flat{border:0;margin:0;padding:0}
     },
     vorrang: {
       title: 'Aufforderung: vorrangige Leistung beantragen', norm: '§ 12a, § 5 Abs. 3 SGB II',
+      betreff: 'Aufforderung zur Beantragung einer vorrangigen Leistung',
+      defaults: () => ({ frist: shiftDE(todayDE(), 0, 14) }),
       fields: [['leistung', 'Leistung', 'select', [['Kindergeld', 'Kindergeld'], ['Unterhaltsvorschuss', 'Unterhaltsvorschuss'], ['Kinderzuschlag', 'Kinderzuschlag'], ['Wohngeld', 'Wohngeld'], ['Arbeitslosengeld', 'Arbeitslosengeld'], ['eine Rente', 'Rente']]], ['stelle', 'Zuständige Stelle (z. B. Familienkasse)', 'text1'], ['frist', 'Nachweis der Antragstellung bis', 'date']],
       render: (f) => [
         `nach § 12a SGB II sind Sie verpflichtet, Sozialleistungen anderer Träger in Anspruch zu nehmen und die dafür erforderlichen Anträge zu stellen, soweit dies zur Vermeidung, Beseitigung, Verkürzung oder Verminderung der Hilfebedürftigkeit erforderlich ist.`,
@@ -1895,13 +1960,30 @@ details.more.flat{border:0;margin:0;padding:0}
       hint: 'Wohngeld und Kinderzuschlag nur, wenn dadurch die Hilfebedürftigkeit der ganzen Bedarfsgemeinschaft für mindestens drei aufeinanderfolgende Monate entfällt (§ 12a S. 2 Nr. 2 SGB II).',
     },
     aktenvermerk: {
-      title: 'Aktenvermerk', norm: 'Dokumentation',
+      title: 'Aktenvermerk', norm: 'Dokumentation', noFrame: true,
       fields: [['anlass', 'Anlass', 'text1'], ['tatsachen', 'Tatsachen mit Beleg und Datum', 'text'], ['wuerdigung', 'Würdigung mit Norm', 'text'], ['ergebnis', 'Ergebnis / Entscheidung', 'text'], ['wv', 'Wiedervorlage am', 'date']],
       render: (f) => ['Aktenvermerk', '', `Anlass: ${v(f.anlass, 'Anlass')}`, '', 'Tatsachen:', v(f.tatsachen, 'Tatsachen'), '', 'Würdigung:', v(f.wuerdigung, 'Würdigung'), '', 'Ergebnis:', v(f.ergebnis, 'Ergebnis'), '', `Wiedervorlage: ${v(f.wv, 'Datum')}`].join('\n'),
     },
   };
-  const render = (id, f) => (T[id] ? T[id].render(f || {}) : '');
-  return { T, render, BELEHRUNG_66 };
+  /** Text erzeugen; opts.frame ergänzt Betreff, [Anrede] und Grußformel. */
+  function render(id, f, opts = {}) {
+    const t = T[id];
+    if (!t) return '';
+    const body = t.render(f || {});
+    if (!opts.frame || t.noFrame) return body;
+    return [`Betreff: ${t.betreff || t.title}`, '', '[Anrede],', '', body, '', 'Mit freundlichen Grüßen', '', '[Name]'].join('\n');
+  }
+  /** Startwerte: Fristvorschläge und, falls vorhanden, Werte aus dem Rechner. Belegte Felder bleiben unverändert. */
+  function prefill(id, f, caseData, force = false) {
+    const t = T[id];
+    const out = { ...(f || {}) };
+    const add = (vals) => { for (const [k, val] of Object.entries(vals || {})) if (val !== undefined && val !== '' && (force || !String(out[k] ?? '').trim())) out[k] = val; };
+    if (t && t.defaults) add(t.defaults());
+    if (t && t.fromCase && caseData) add(t.fromCase(caseData));
+    return out;
+  }
+  const checks = (id, f) => (T[id] && T[id].check ? T[id].check(f || {}) : []);
+  return { T, render, prefill, checks, placeholders, shiftDE, todayDE, parseRows, BELEHRUNG_66 };
 });
 
 </script>
@@ -2377,6 +2459,7 @@ details.more.flat{border:0;margin:0;padding:0}
       const t = letterText();
       if (!t.trim()) { flash('Keine fehlenden Unterlagen.'); return; }
       saveDocx(t, `Zwischenmitteilung_${today()}.docx`);
+      s.letterDate = today();
     },
     copyLetter: async () => { try { await copyText(letterText()); flash('Zwischenmitteilung kopiert.'); } catch (_) { flash('Kopieren nicht möglich.'); } },
     copyTodos: async () => { try { await copyText(K.todos(checkInput(), W.compute(input()), missingItems().length).map((x) => `[${s.done[x.id] ? 'x' : ' '}] ${x.text} (${x.norm})`).join('\n')); flash('Aufgaben kopiert.'); } catch (_) { flash('Kopieren nicht möglich.'); } },
@@ -2431,6 +2514,8 @@ details.more.flat{border:0;margin:0;padding:0}
   render();
   window.WAApp = {
     render, esc, flash, saveDocx, copyText, ICON, today,
+    /** Falldaten für die Vorlagen (nur Arbeitsspeicher). */
+    caseData: () => ({ rent: s.housing.rent, limit: s.housing.limit, persons: (s.single ? 1 : 2) + s.children.length, phase: s.housing.phase, newLaw: RS().law === 'neu', missing: missingItems().map((i) => i.title), letterDate: s.letterDate || '' }),
     setKind: (k) => { s.kind = k; s.housing.phase = k === 'erst' ? 'karenz' : 'grenze'; },
   };
   window.__WA_STATE__ = () => JSON.parse(JSON.stringify(s));
@@ -2450,7 +2535,7 @@ details.more.flat{border:0;margin:0;padding:0}
   const esc = A.esc;
   const TYPE = { T: ['Tatsache', 'tt'], W: ['Würdigung', 'tw'], H: ['Handlung', 'th'] };
   const NAV = [['start', 'Start'], ['rechner', 'Rechner'], ['fristen', 'Fristen'], ['vorlagen', 'Vorlagen'], ['uebung', 'Übung']];
-  const st = { view: 'start', vorgang: null, done: {}, notes: {}, fr: {}, vlId: 'anhoerung', vl: {}, av: {}, ue: null, ueAns: {}, ueShown: false };
+  const st = { view: 'start', vorgang: null, done: {}, notes: {}, fr: {}, vlId: 'anhoerung', vl: {}, vlFrame: false, vlConfirm: null, av: {}, ue: null, ueAns: {}, ueShown: false };
   const get = (path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), st);
   function set(path, val) { const ks = path.split('.'); const last = ks.pop(); let o = st; for (const k of ks) { if (o[k] == null) o[k] = {}; o = o[k]; } o[last] = val; }
 
@@ -2520,19 +2605,51 @@ details.more.flat{border:0;margin:0;padding:0}
   const VL_LIST = () => [...Object.entries(VL.T).map(([k, t]) => [k, t.title]), ['nachweis41a', 'Nachweise § 41a (eigenes Schreiben)']];
   function vorlageText() {
     const f = st.vl[st.vlId] || {};
-    if (st.vlId === 'nachweis41a') return K.letter41a({ from: f.von, to: f.bis, deadline: f.frist, frame: false });
-    return VL.render(st.vlId, f);
+    if (st.vlId === 'nachweis41a') return K.letter41a({ from: f.von, to: f.bis, deadline: f.frist, frame: !!st.vlFrame });
+    return VL.render(st.vlId, f, { frame: !!st.vlFrame });
+  }
+  /** Vorlage beim ersten Öffnen mit Fristvorschlag und Rechnerwerten vorbelegen. */
+  function ensurePrefill(id, force = false) {
+    if (id === 'nachweis41a') { if (!st.vl[id]) st.vl[id] = { frist: VL.shiftDE(VL.todayDE(), 0, 14) }; return; }
+    if (st.vl[id] && !force) return;
+    st.vl[id] = VL.prefill(id, st.vl[id], A.caseData ? A.caseData() : null, force);
+  }
+  function autoBisText() {
+    const f = st.vl.kostensenkung || {};
+    if (String(f.bis || '').trim()) return '';
+    return `„Längstens bis“ automatisch: ${esc(VL.T.kostensenkung.autoBis(f))} (6 Monate ${String(f.karenzEnde || '').trim() ? 'nach Ende der Karenzzeit' : 'ab heute'}).`;
+  }
+  const hl = (text) => esc(text).replace(/\[[^\]\n]{1,60}\]/g, (m) => `<mark>${m}</mark>`);
+  function vlWarnHTML() {
+    const text = vorlageText();
+    const ph = VL.placeholders(text);
+    const msgs = [...(st.vlId === 'nachweis41a' ? [] : VL.checks(st.vlId, st.vl[st.vlId]))];
+    if (ph.length) msgs.unshift(`Noch ${ph.length} Platzhalter offen: ${ph.join(', ')}`);
+    return msgs.length ? `<div class="note warn">${msgs.map(esc).join('<br>')}</div>` : '<div class="note">Alle Angaben ausgefüllt.</div>';
+  }
+  function vlExport(kind) {
+    const ph = VL.placeholders(vorlageText());
+    if (ph.length && st.vlConfirm !== kind) { st.vlConfirm = kind; A.flash(`Noch ${ph.length} Platzhalter offen. Zum Fortfahren erneut klicken.`); return false; }
+    st.vlConfirm = null;
+    return true;
   }
   function pageVorlagen() {
     const id = st.vlId;
     const t = id === 'nachweis41a' ? { title: 'Nachweise für die abschließende Entscheidung', norm: '§ 41a Abs. 3 SGB II', fields: [['von', 'Vorläufig bewilligt ab', 'date'], ['bis', 'bis', 'date'], ['frist', 'Nachweise bis', 'date']] } : VL.T[id];
+    ensurePrefill(id);
+    const canCase = id !== 'nachweis41a' && VL.T[id] && VL.T[id].fromCase;
+    const autoBis = id === 'kostensenkung' ? `<div class="hint" id="vlAutoBis">${autoBisText()}</div>` : '';
     return `<section class="card"><div class="card-head"><h2>Vorlagen</h2><span class="sub">nur Sachtext, ohne Namen und Aktenzeichen</span></div>
       <div class="chips">${VL_LIST().map(([k, l]) => `<button type="button" class="chip" data-va="vorlage" data-v="${k}" aria-pressed="${k === id}">${esc(l)}</button>`).join('')}</div></section>
       <section class="card"><div class="card-head tight"><h2>${esc(t.title)}</h2><span class="norm">${esc(t.norm)}</span></div>
         ${t.hint ? `<div class="note warn">${esc(t.hint)}</div>` : ''}
+        ${canCase ? '<div class="btn-row"><button type="button" class="btn small" data-va="vlFromCase">Aus dem Rechner übernehmen</button><span class="hint">Miete, Grenze, Personen bzw. fehlende Unterlagen</span></div>' : ''}
         <div class="grid row-gap">${t.fields.map(([k, l, type, opts]) => field(`vl.${id}.${k}`, l, type === 'money' ? 'money' : type, opts)).join('')}</div>
+        ${autoBis}
+        ${t.noFrame ? '' : `<div class="row-gap">${field('vlFrame', 'Mit Betreff, [Anrede] und Grußformel', 'bool')}</div>`}
+        <div id="vlWarn" class="row-gap">${vlWarnHTML()}</div>
         <div class="btn-row row-gap"><button type="button" class="btn primary" data-va="vlWord">${A.ICON.doc} Als Word</button><button type="button" class="btn ghost" data-va="vlCopy">${A.ICON.copy} Kopieren</button></div>
-        <pre class="preview row-gap" id="vlPreview">${esc(vorlageText())}</pre>
+        <pre class="preview row-gap" id="vlPreview">${hl(vorlageText())}</pre>
         <p class="hint">Prüfhilfe. Verbindlich sind die Vordrucke und Textbausteine Ihres Trägers.</p></section>`;
   }
   function pageUebung() {
@@ -2570,8 +2687,9 @@ details.more.flat{border:0;margin:0;padding:0}
       st.vorgang = el.dataset.v; st.view = 'vorgang'; show();
     },
     vorlage: (el) => { st.vlId = el.dataset.v; st.view = 'vorlagen'; show(); },
-    vlWord: () => A.saveDocx(vorlageText(), `${st.vlId}_${A.today()}.docx`),
-    vlCopy: async () => { try { await A.copyText(vorlageText()); A.flash('Text kopiert.'); } catch (_) { A.flash('Kopieren nicht möglich.'); } },
+    vlWord: () => { if (vlExport('word')) A.saveDocx(vorlageText(), `${st.vlId}_${A.today()}.docx`); },
+    vlFromCase: () => { ensurePrefill(st.vlId, true); show({ keepScroll: true }); A.flash('Werte aus dem Rechner übernommen.'); },
+    vlCopy: async () => { if (!vlExport('copy')) return; try { await A.copyText(vorlageText()); A.flash('Text kopiert.'); } catch (_) { A.flash('Kopieren nicht möglich.'); } },
     avWord: () => A.saveDocx(vermerkText(), `Aktenvermerk_${A.today()}.docx`),
     avCopy: async () => { try { await A.copyText(vermerkText()); A.flash('Aktenvermerk kopiert.'); } catch (_) { A.flash('Kopieren nicht möglich.'); } },
     ue: (el) => { st.ueAns[el.dataset.id] = el.dataset.v; show({ keepScroll: true }); },
@@ -2585,7 +2703,12 @@ details.more.flat{border:0;margin:0;padding:0}
   function refreshFor(t) {
     const fr = t.closest('[data-frist]');
     if (fr) { const id = fr.dataset.frist, p = fr.dataset.prefix; const box = document.getElementById(`res_${p}_${id}`); if (box) box.innerHTML = fristResult(id, p); }
-    if (st.view === 'vorlagen') { const pre = $('#vlPreview'); if (pre) pre.textContent = vorlageText(); }
+    if (st.view === 'vorlagen') {
+      st.vlConfirm = null;
+      const pre = $('#vlPreview'); if (pre) pre.innerHTML = hl(vorlageText());
+      const w = $('#vlWarn'); if (w) w.innerHTML = vlWarnHTML();
+      const ab = $('#vlAutoBis'); if (ab) ab.innerHTML = autoBisText();
+    }
   }
   document.addEventListener('input', (e) => {
     const t = e.target;
